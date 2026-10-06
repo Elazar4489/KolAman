@@ -2,4 +2,5 @@
   <Project Path="ClassificationComponent/ClassificationComponent.csproj" />
   <Project Path="CommandSystemDB/CommandSystemDB.csproj" />
   <Project Path="NotificationGate/NotificationGate.csproj" />
+  <Project Path="TheOperationalVehicle/TheOperationalVehicle.csproj" Id="1dd7d7e5-6ab7-4cd6-9f35-a905ced92a54" />
 </Solution>
