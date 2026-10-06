@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="ClassificationComponent/ClassificationComponent.csproj" />
+  <Project Path="CommandSystemDB/CommandSystemDB.csproj" />
+  <Project Path="NotificationGate/NotificationGate.csproj" />
+</Solution>

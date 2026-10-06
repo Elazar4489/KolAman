@@ -1,0 +1,234 @@
+services:
+  kafka:
+    image: apache/kafka:latest
+    container_name: kafka
+    ports:
+      - "9094:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.0
+    container_name: kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+  kibana-initializer:
+    image: curlimages/curl:latest
+    volumes:
+      - ./kibana:/kibana_data
+    depends_on:
+      - kibana
+    command: >
+      sh -c "
+        echo 'Waiting for Kibana to be ready...' &&
+        until curl -s -f http://kibana:5601/api/status; do
+          sleep 5;
+        done &&
+        echo 'Kibana is up! Importing dashboard objects...' &&
+        curl -X POST 'http://kibana:5601/api/saved_objects/_import?overwrite=true' \
+          -H 'kbn-xsrf: true' \
+          --form file=@/kibana_data/kibana-export.ndjson &&
+        echo 'Dashboard imported successfully!'
+      "
+  mysql:
+    image: mysql
+    container_name: mysql
+    restart: always
+    ports:
+      - 3306:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pmy-secret-pw"]
+      interval: 10s       
+      timeout: 5s         
+      retries: 5         
+      start_period: 15s
+    volumes:
+        - mysql_data:/var/lib/mysql
+  mongo:
+    image: mongo
+    container_name: mongo
+    restart: always
+    ports:
+      - 27017:27017
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --eval 'db.runCommand({ping: 1})' --quiet || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - mongo_data:/data/db
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"   
+      - "15672:15672" 
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s      
+      timeout: 5s      
+      retries: 5  
+      start_period: 20s
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+
+
+  
+  
+  # script-loader:
+  #   build:
+  #     context: ./script-loader
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - DB_USER=root
+  #     - DB_PASSWORD=root
+  #     - DB_HOST=mysql
+  #     - DB_PORT=3306
+  #     - DB_NAME=activity_monitoring
+  #   depends_on:
+  #     mysql:
+  #       condition: service_healthy
+  # python-producer:
+  #   build:
+  #     context: ./producer
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - KAFKA_BROKER=kafka:9092
+  #     - TOPIC=activity-readings
+  #   depends_on:
+  #     kafka:
+  #       condition: service_healthy
+  # analytics-service:
+  #   build:
+  #     context: ./analytics_service
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - WINDOW_SIZE=20
+  #     - Z_THRESHOLD=3.5
+  #     - CRITICAL_THRESHOLD=4.5
+  #     - KAFKA_BROKER=kafka:9092
+  #     - CONSUMER_TOPIC=activity-readings
+  #     - PRODUCER_TOPIC=anomalies
+  #     - GROUP_ID=analytics-service-group
+  #     - AUTO_OFFSET_RESET=earliest
+  #     - ENABLE_AUTO_COMMIT=False
+  #     - CLIENT_ID=analytics-service-producer
+  #   depends_on:
+  #     kafka:
+  #       condition: service_healthy
+  #     python-producer:
+  #       condition: service_started
+  # raw-consumer:
+  #   build:
+  #     context: ./RawConsumer 
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - Kafka__BootstrapServers=kafka:9092
+  #     - Kafka__GroupId=raw-consumer
+  #     - Kafka__AutoOffsetReset=Earliest
+  #     - Kafka__EnableAutoCommit=false
+  #     - Kafka__Topic=activity-readings
+  #     - Mongo__ConnectionString=mongodb://mongo:27017
+  #     - Mongo__DatabaseName=ActivityMonitoring
+  #     - Mongo__CollectionName=raw_readings
+  #   depends_on:
+  #     kafka:
+  #       condition: service_healthy
+  #     mongo:
+  #       condition: service_healthy
+  #     python-producer:
+  #       condition: service_started
+  # name:
+  #   build:
+  #     context: ./
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - ConnectionStrings__MySQL=Server=mysql;Port=3306;Database=activity_monitoring;Uid=root;Pwd=root;
+  #     - Kafka__BootstrapServers=kafka:9092
+  #     - Kafka__GroupId=persistence-consumer
+  #     - Kafka__AutoOffsetReset=Earliest
+  #     - Kafka__EnableAutoCommit=false
+  #     - Kafka__Topic=anomalies
+  #     - Elasticsearch__Node=http://elasticsearch:9200
+  #     - Elasticsearch__Username=elastic
+  #     - Elasticsearch__Password=changeme
+  #     - Elasticsearch__DefaultIndex=anomalies-index
+  #     - RabbitMQ__Host=rabbitmq
+  #     - RabbitMQ__Port=5672
+  #     - RabbitMQ__VirtualHost=/
+  #     - RabbitMQ__Username=guest
+  #     - RabbitMQ__Password=guest
+  #     - RabbitMQ__ExchangeName=alerts
+  #     - RabbitMQ__CriticalQueue=queue.alerts.critical
+  #     - RabbitMQ__ExchangeType=direct
+  #     - RabbitMQ__RoutingKey=alert.critical
+  #   depends_on:
+  #     kafka:
+  #       condition: service_healthy
+  #     mysql:
+  #       condition: service_healthy
+  #     elasticsearch:
+  #       condition: service_healthy
+  #     rabbitmq:
+  #       condition: service_healthy
+  #     analytics-service:
+  #       condition: service_started
+volumes:
+  mongo_data:
+    driver: local
+  kafka-data:
+    driver: local
+  elasticsearch-data:
+    driver: local
+  mysql_data:
+    driver: local
+  rabbitmq-data:
+    driver: local
+  alerts:
+
+  
+
+
+
